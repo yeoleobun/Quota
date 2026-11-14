@@ -47,12 +47,25 @@ curl -fsSL https://raw.githubusercontent.com/yeoleobun/Quota/main/scripts/instal
 - **Hover or Click to Reveal:** Hover over the menu bar icon to glance at remaining percentages, ring gauges, and reset timers — move your cursor away to auto-dismiss, or click to keep the menu pinned.
 - **Zero Credentials Stored:** Reads live usage directly from your existing local CLI sessions (`codex app-server --stdio` bundled in `ChatGPT.app` and `~/.local/bin/agy` `/usage`) with resilient cached fallback if a refresh fails.
 
-## Requirements
+## Prerequisites & CLI Discovery
 
-- macOS 26.0+ on Apple Silicon (`arm64`)
-- One or both supported tools signed in locally:
-  - **OpenAI Codex** (`/Applications/ChatGPT.app` or `codex` CLI)
-  - **Google Antigravity** (`~/.local/bin/agy`)
+- **macOS 26.0+** on Apple Silicon (`arm64`)
+- At least one supported CLI/runtime installed and signed in locally:
+  - **OpenAI Codex:** Standalone `codex` CLI (`brew install --cask codex` or `npm i -g @openai/codex`), **Codex.app**, or **ChatGPT.app**
+  - **Google Antigravity:** Antigravity CLI (`curl -fsSL https://antigravity.google/cli/install.sh | bash`, then run `agy` once to sign in)
+
+### Binary Resolution Priority
+
+Because macOS GUI menu bar apps launched from Finder/Spotlight do not inherit interactive terminal `.zshrc` `PATH` additions automatically, **Quota** resolves each binary in the following priority order:
+
+1. **Custom path override** in `~/.config/quota/settings.json` (`customCodexPath` / `customAgyPath`)
+2. **`PATH`** — current process `PATH`, followed by your login shell `PATH` (`$SHELL -lc 'printf "%s" "$PATH"'`)
+3. **Standard CLI install locations** (when not on `PATH`):
+   - **`codex`:** `/opt/homebrew/bin/codex` → `/usr/local/bin/codex` → `~/.local/bin/codex` → `~/.bun/bin/codex` → `~/.volta/bin/codex` → `~/.local/share/mise/shims/codex` → `~/.asdf/shims/codex` → `~/.npm-global/bin/codex` → `~/.nvm/versions/node/<latest>/bin/codex`
+   - **`agy`:** `~/.local/bin/agy` → `/opt/homebrew/bin/agy` → `/usr/local/bin/agy` *(IDE window launcher wrappers inside `.app/Contents/Resources/app/bin` are automatically skipped)*
+4. **Bundled desktop app runtimes (`codex` fallback):**
+   - `/Applications/Codex.app/Contents/Resources/codex` (and `~/Applications/...`)
+   - `/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex` (and `~/Applications/...`)
 
 ## Build from Source
 

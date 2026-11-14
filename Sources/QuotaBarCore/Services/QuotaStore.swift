@@ -116,11 +116,15 @@ public final class QuotaStore: ObservableObject {
     }
 
     public func openChatGPTApp() {
-        let url = URL(fileURLWithPath: "/Applications/ChatGPT.app")
-        if FileManager.default.fileExists(atPath: url.path) {
-            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
-        } else if let path = BinaryLocator.findCodex(customPath: settings.customCodexPath) {
+        let codexAppURL = URL(fileURLWithPath: "/Applications/Codex.app")
+        let chatGPTAppURL = URL(fileURLWithPath: "/Applications/ChatGPT.app")
+        if let path = BinaryLocator.findCodex(customPath: settings.customCodexPath),
+           !path.contains(".app/Contents/") {
             runCommandInTerminalApp("\(path) login")
+        } else if FileManager.default.fileExists(atPath: codexAppURL.path) {
+            NSWorkspace.shared.openApplication(at: codexAppURL, configuration: NSWorkspace.OpenConfiguration())
+        } else if FileManager.default.fileExists(atPath: chatGPTAppURL.path) {
+            NSWorkspace.shared.openApplication(at: chatGPTAppURL, configuration: NSWorkspace.OpenConfiguration())
         }
     }
 

@@ -155,4 +155,67 @@ struct ParserTests {
         #expect(mergedAfterRecovery.windows[0].remainingPercent == 11)
         #expect(mergedAfterRecovery.refreshWarning == nil)
     }
+
+    @Test("BinaryLocator honors custom path -> PATH priority and skips IDE GUI launchers for agy")
+    func binaryLocatorPriorityOrder() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("quota-locator-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fm.removeItem(at: root) }
+
+        let customDir = root.appendingPathComponent("custom", isDirectory: true)
+        let pathDir1 = root.appendingPathComponent("path1", isDirectory: true)
+        let pathDir2 = root.appendingPathComponent("path2", isDirectory: true)
+        let fakeIDEBin = root.appendingPathComponent("Antigravity.app/Contents/Resources/app/bin", isDirectory: true)
+
+        for dir in [customDir, pathDir1, pathDir2, fakeIDEBin] {
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+
+        func makeExec(_ url: URL) throws {
+            try "#!/bin/sh\necho ok\n".write(to: url, atomically: true, encoding: .utf8)
+            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+        }
+
+        let customCodex = customDir.appendingPathComponent("codex")
+        let path1Codex = pathDir1.appendingPathComponent("codex")
+        let path2Codex = pathDir2.appendingPathComponent("codex")
+        try makeExec(customCodex)
+        try makeExec(path1Codex)
+        try makeExec(path2Codex)
+
+        // 1. Custom path overrides PATH
+        #expect(
+            BinaryLocator.findCodex(
+                customPath: customCodex.path,
+                pathDirectories: [pathDir1.path, pathDir2.path],
+                includeStandardFallbacks: false
+            ) == customCodex.path
+        )
+
+        // 2. Earlier PATH entry wins when custom path is unset
+        #expect(
+            BinaryLocator.findCodex(
+                customPath: "",
+                pathDirectories: [pathDir1.path, pathDir2.path],
+                includeStandardFallbacks: false
+            ) == path1Codex.path
+        )
+
+        // 3. IDE wrapper inside `.app/Contents/Resources/app/bin/agy` is skipped in favor of real CLI
+        let fakeIDEAgy = fakeIDEBin.appendingPathComponent("agy")
+        try makeExec(fakeIDEAgy)
+        let symlinkInPath1 = pathDir1.appendingPathComponent("agy")
+        try fm.createSymbolicLink(at: symlinkInPath1, withDestinationURL: fakeIDEAgy)
+
+        let realCLIAgy = pathDir2.appendingPathComponent("agy")
+        try makeExec(realCLIAgy)
+
+        #expect(
+            BinaryLocator.findAgy(
+                customPath: "",
+                pathDirectories: [pathDir1.path, pathDir2.path],
+                includeStandardFallbacks: false
+            ) == realCLIAgy.path
+        )
+    }
 }
