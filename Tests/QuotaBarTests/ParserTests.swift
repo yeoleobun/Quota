@@ -218,4 +218,52 @@ struct ParserTests {
             ) == realCLIAgy.path
         )
     }
+
+    @Test("UpdateService compares semantic versions and parses GitHub release payloads")
+    func updateServiceParsingAndVersioning() throws {
+        #expect(UpdateService.isNewerVersion("v0.1.4", than: "0.1.3") == true)
+        #expect(UpdateService.isNewerVersion("0.2.0", than: "0.1.9") == true)
+        #expect(UpdateService.isNewerVersion("0.1.3", than: "0.1.3") == false)
+        #expect(UpdateService.isNewerVersion("0.1.2", than: "0.1.3") == false)
+        #expect(UpdateService.isNewerVersion("0.2.0", than: "0.2.0-beta.1") == true)
+        #expect(UpdateService.isNewerVersion("0.2.0-beta.1", than: "0.2.0") == false)
+
+        let releaseJSON = """
+        {
+          "tag_name": "v0.2.0",
+          "html_url": "https://github.com/yeoleobun/Quota/releases/tag/v0.2.0",
+          "draft": false,
+          "prerelease": false,
+          "assets": [
+            {
+              "name": "Quota-macos-arm64.zip",
+              "browser_download_url": "https://github.com/yeoleobun/Quota/releases/download/v0.2.0/Quota-macos-arm64.zip"
+            },
+            {
+              "name": "SHA256SUMS.txt",
+              "browser_download_url": "https://github.com/yeoleobun/Quota/releases/download/v0.2.0/SHA256SUMS.txt"
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+
+        let parsed = try UpdateService.parseLatestReleaseData(releaseJSON, currentVersion: "0.1.3")
+        #expect(parsed?.version == "0.2.0")
+        #expect(parsed?.zipDownloadURL.lastPathComponent == "Quota-macos-arm64.zip")
+        #expect(parsed?.sha256SumsURL?.lastPathComponent == "SHA256SUMS.txt")
+
+        // Same or newer local version returns nil
+        let upToDate = try UpdateService.parseLatestReleaseData(releaseJSON, currentVersion: "0.2.0")
+        #expect(upToDate == nil)
+
+        // SHA256SUMS.txt extraction
+        let sums = """
+        8d4f6ef68c22bd1c2af692e4271f8a515b2512c543ef3b8213f84f43681b3c65  Quota-macos-arm64.zip
+        151535b9648f6bfaff7141e21d5ac6072a07eb04e4da24d055266d9be6a8358e  Quota-macos-arm64.dmg
+        """
+        #expect(
+            UpdateService.extractExpectedSHA256(from: sums) ==
+                "8d4f6ef68c22bd1c2af692e4271f8a515b2512c543ef3b8213f84f43681b3c65"
+        )
+    }
 }

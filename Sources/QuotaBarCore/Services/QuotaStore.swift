@@ -22,9 +22,11 @@ public final class QuotaStore: ObservableObject {
     }
     @Published public private(set) var isRefreshing: Bool = false
     @Published public private(set) var now: Date = Date()
+    @Published public private(set) var updateState: AppUpdateState = .idle
 
     private var pollTimer: Timer?
     private var clockTimer: Timer?
+    private var updateTimer: Timer?
 
     private static var configDirectoryURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -49,9 +51,14 @@ public final class QuotaStore: ObservableObject {
         }
         startClockTimer()
         reschedulePollingTimer()
+        startUpdateCheckTimer()
 
         Task {
             await refreshAll()
+        }
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            _ = await self?.checkForUpdates(userInitiated: false)
         }
     }
 
@@ -200,6 +207,62 @@ public final class QuotaStore: ObservableObject {
             Task { @MainActor [weak self] in
                 await self?.refreshAll()
             }
+        }
+    }
+
+    // MARK: - Serverless GitHub Releases Update Check & Self-Update
+
+    private func startUpdateCheckTimer() {
+        updateTimer?.invalidate()
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 6 * 3600, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                _ = await self?.checkForUpdates(userInitiated: false)
+            }
+        }
+    }
+
+    @discardableResult
+    public func checkForUpdates(userInitiated: Bool) async -> AppUpdateState {
+        if case .updating = updateState {
+            return updateState
+        }
+        let previousAvailable: ReleaseAssetInfo? = {
+            if case .updateAvailable(let info) = updateState { return info }
+            return nil
+        }()
+
+        if userInitiated {
+            updateState = .checking
+        }
+
+        do {
+            if let latest = try await UpdateService.fetchLatestUpdate() {
+                updateState = .updateAvailable(latest)
+            } else {
+                updateState = userInitiated
+                    ? .upToDate(version: UpdateService.currentAppVersion)
+                    : .idle
+            }
+        } catch {
+            if let previousAvailable {
+                updateState = .updateAvailable(previousAvailable)
+            } else if userInitiated {
+                updateState = .failed(message: error.localizedDescription)
+            } else {
+                updateState = .idle
+            }
+        }
+        return updateState
+    }
+
+    public func installAvailableUpdate(_ release: ReleaseAssetInfo) async throws {
+        updateState = .updating(version: release.version)
+        do {
+            try await UpdateService.stageAndLaunchReplacement(for: release)
+            NSApplication.shared.terminate(nil)
+        } catch {
+            updateState = .updateAvailable(release)
+            throw error
         }
     }
 

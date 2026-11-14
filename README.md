@@ -46,6 +46,7 @@ curl -fsSL https://raw.githubusercontent.com/yeoleobun/Quota/main/scripts/instal
   - **Red:** `<= 10%` remaining
 - **Hover or Click to Reveal:** Hover over the menu bar icon to glance at remaining percentages, ring gauges, and reset timers — move your cursor away to auto-dismiss, or click to keep the menu pinned.
 - **Zero Credentials Stored:** Reads live usage directly from your existing local CLI sessions (`codex app-server --stdio` bundled in `ChatGPT.app` and `~/.local/bin/agy` `/usage`) with resilient cached fallback if a refresh fails.
+- **Serverless In-App Self-Update:** Checks GitHub Releases (`releases/latest`) in the background and adds a 1-click **`Update to vX.Y.Z`** item in the menu that SHA-256 verifies, unquarantines, swaps `Quota.app`, and relaunches automatically (no external update server required).
 
 ## Prerequisites & CLI Discovery
 

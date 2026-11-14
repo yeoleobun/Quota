@@ -76,9 +76,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     private func bindStore() {
         store.$snapshots
-            .combineLatest(store.$settings)
+            .combineLatest(store.$settings, store.$updateState)
             .receive(on: RunLoop.main)
-            .sink { [weak self] _, _ in
+            .sink { [weak self] _, _, _ in
                 guard let self else { return }
                 self.updateStatusButtonAppearance()
                 if self.isMenuOpen, self.menu.highlightedItem == nil {
@@ -271,6 +271,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         refreshItem.submenu = refreshSubmenu
         menu.addItem(refreshItem)
 
+        appendUpdateMenuItem()
+
         menu.addItem(.separator())
 
         // 4. Quit Item
@@ -412,6 +414,128 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     @objc private func handleQuit(_ sender: NSMenuItem) {
         NSApplication.shared.terminate(nil)
+    }
+
+    // MARK: - In-App Update Menu & Alerts
+
+    private func appendUpdateMenuItem() {
+        switch store.updateState {
+        case .updateAvailable(let release):
+            let item = NSMenuItem(
+                title: "Update to v\(release.version)",
+                action: #selector(handleInstallUpdate(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.isEnabled = true
+            item.badge = .updates(count: 1)
+            menu.addItem(item)
+
+        case .updating(let version):
+            let item = NSMenuItem(title: "Updating to v\(version)…", action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            menu.addItem(item)
+
+        case .checking:
+            let item = NSMenuItem(title: "Checking for Updates…", action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            menu.addItem(item)
+
+        case .upToDate(let version):
+            let item = NSMenuItem(
+                title: "Check for Updates…",
+                action: #selector(handleCheckForUpdates(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.isEnabled = true
+            item.badge = NSMenuItemBadge(string: "v\(version)")
+            menu.addItem(item)
+
+        case .idle, .failed:
+            let item = NSMenuItem(
+                title: "Check for Updates…",
+                action: #selector(handleCheckForUpdates(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.isEnabled = true
+            menu.addItem(item)
+        }
+    }
+
+    @objc private func handleCheckForUpdates(_ sender: NSMenuItem) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let result = await self.store.checkForUpdates(userInitiated: true)
+            switch result {
+            case .updateAvailable(let release):
+                self.promptToInstallUpdate(release)
+            case .upToDate(let version):
+                self.presentSimpleAlert(
+                    title: "You’re Up to Date",
+                    informativeText: "Quota v\(version) is currently the latest version available."
+                )
+            case .failed(let message):
+                self.presentSimpleAlert(
+                    title: "Could Not Check for Updates",
+                    informativeText: message
+                )
+            case .idle, .checking, .updating:
+                break
+            }
+        }
+    }
+
+    @objc private func handleInstallUpdate(_ sender: NSMenuItem) {
+        guard case .updateAvailable(let release) = store.updateState else { return }
+        triggerSelfUpdate(release)
+    }
+
+    private func promptToInstallUpdate(_ release: ReleaseAssetInfo) {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.icon = NSApp.applicationIconImage
+        alert.messageText = "Quota v\(release.version) is Available"
+        alert.informativeText = "You are currently running v\(UpdateService.currentAppVersion). Would you like to download, install, and relaunch Quota automatically?"
+        alert.addButton(withTitle: "Update & Relaunch")
+        alert.addButton(withTitle: "Later")
+        if alert.runModal() == .alertFirstButtonReturn {
+            triggerSelfUpdate(release)
+        }
+    }
+
+    private func triggerSelfUpdate(_ release: ReleaseAssetInfo) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await self.store.installAvailableUpdate(release)
+            } catch {
+                NSApp.activate(ignoringOtherApps: true)
+                let alert = NSAlert()
+                alert.alertStyle = .warning
+                alert.icon = NSApp.applicationIconImage
+                alert.messageText = "Automatic Update Failed"
+                alert.informativeText = "\(error.localizedDescription)\n\nYou can also upgrade via `brew upgrade --cask quota` or download from GitHub Releases."
+                alert.addButton(withTitle: "Open Release Page")
+                alert.addButton(withTitle: "Cancel")
+                if alert.runModal() == .alertFirstButtonReturn {
+                    NSWorkspace.shared.open(release.releasePageURL)
+                }
+            }
+        }
+    }
+
+    private func presentSimpleAlert(title: String, informativeText: String) {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.icon = NSApp.applicationIconImage
+        alert.messageText = title
+        alert.informativeText = informativeText
+        alert.addButton(withTitle: "OK")
+        _ = alert.runModal()
     }
 }
 
