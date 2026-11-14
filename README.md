@@ -13,6 +13,8 @@
 ### Option 1: Homebrew (Recommended — No Gatekeeper Warning)
 
 ```bash
+brew tap yeoleobun/tap
+brew trust yeoleobun/tap 2>/dev/null || true
 brew install --cask yeoleobun/tap/quota
 ```
 
