@@ -8,6 +8,10 @@
   A lightweight, native macOS menu bar indicator for <b>OpenAI Codex</b> and <b>Google Antigravity</b> subscription usage and reset countdowns.
 </p>
 
+<p align="center">
+  <img src="Assets/Screenshot.png" width="400" alt="Quota Menu Bar Preview" />
+</p>
+
 ## Install (Apple Silicon)
 
 ### Option 1: Homebrew (Recommended — No Gatekeeper Warning)
@@ -65,7 +69,7 @@ swift test
 
 ## Project Structure
 
-- `Assets/` — App bundle icon (`AppIcon.png`, `AppIcon.icns`)
+- `Assets/` — App bundle icon (`AppIcon.png`, `AppIcon.icns`) and preview screenshot (`Screenshot.png`)
 - `Sources/QuotaBarApp/` — Native AppKit menu bar item, hover tracking, and `NSMenu` UI
 - `Sources/QuotaBarCore/` — `CodexProvider`, `AntigravityProvider`, models, and polling store
 - `Tests/QuotaBarTests/` — Parser and resilient state merge unit tests
