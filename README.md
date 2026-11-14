@@ -40,7 +40,7 @@ curl -fsSL https://raw.githubusercontent.com/yeoleobun/Quota/main/scripts/instal
 ## Features
 
 - **Native macOS Menu (`NSMenu`):** Uses AppKit's genuine system menu (`statusItem.menu`) so backdrop translucency, section headers, badges, checkmarks, and hover highlights match macOS natively.
-- **Weekly Watermark Status Dot:** Displays a monochrome menu bar beer mug icon (`isTemplate = true`) with an optional **Green / Yellow / Red** corner dot reflecting the active agent's weekly quota watermark:
+- **Weekly Watermark Status Dot:** Displays a monochrome menu bar wheat-beer glass icon (`isTemplate = true`) with an optional **Green / Yellow / Red** corner dot reflecting the active agent's weekly quota watermark:
   - **Green:** `> 25%` remaining
   - **Yellow:** `11% – 25%` remaining
   - **Red:** `<= 10%` remaining
