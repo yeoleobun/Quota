@@ -61,13 +61,7 @@ func renderMasterIcon1024(from source: NSImage) -> NSBitmapImageRep {
     clipPath.addClip()
 
     let srcSize = source.size
-    let cropInset = min(srcSize.width, srcSize.height) * 0.06
-    let fromRect = NSRect(
-        x: cropInset,
-        y: cropInset,
-        width: srcSize.width - cropInset * 2,
-        height: srcSize.height - cropInset * 2
-    )
+    let fromRect = NSRect(x: 0, y: 0, width: srcSize.width, height: srcSize.height)
     source.draw(in: cardRect, from: fromRect, operation: .sourceOver, fraction: 1.0)
 
     // Subtle hairline border so a light squircle stands out cleanly on light & dark desktops
