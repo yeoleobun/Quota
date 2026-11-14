@@ -8,6 +8,29 @@
   A lightweight, native macOS menu bar indicator for <b>OpenAI Codex</b> and <b>Google Antigravity</b> subscription usage and reset countdowns.
 </p>
 
+## Install (Apple Silicon)
+
+### Option 1: Homebrew (Recommended — No Gatekeeper Warning)
+
+```bash
+brew install --cask yeoleobun/tap/quota
+```
+
+### Option 2: One-Line Terminal Installer
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yeoleobun/Quota/main/scripts/install.sh | zsh
+```
+
+### Option 3: Manual `.dmg` Download
+
+1. Download **`Quota-macos-arm64.dmg`** from the [latest GitHub Release](https://github.com/yeoleobun/Quota/releases/latest) and drag **`Quota.app`** into `/Applications`.
+2. Clear the browser quarantine flag once before first launch:
+   ```bash
+   xattr -cr /Applications/Quota.app
+   open /Applications/Quota.app
+   ```
+
 ## Features
 
 - **Native macOS Menu (`NSMenu`):** Uses AppKit's genuine system menu (`statusItem.menu`) so backdrop translucency, section headers, badges, checkmarks, and hover highlights match macOS natively.
@@ -17,16 +40,6 @@
   - **Red:** `<= 10%` remaining
 - **Hover or Click to Reveal:** Hover over the menu bar icon to glance at remaining percentages, ring gauges, and reset timers — move your cursor away to auto-dismiss, or click to keep the menu pinned.
 - **Zero Credentials Stored:** Reads live usage directly from your existing local CLI sessions (`codex app-server --stdio` bundled in `ChatGPT.app` and `~/.local/bin/agy` `/usage`) with resilient cached fallback if a refresh fails.
-
-## Download & Install (Apple Silicon)
-
-1. Download **`Quota-macos-arm64.dmg`** (or `Quota-macos-arm64.zip`) from the [latest GitHub Release](https://github.com/yeoleobun/Quota/releases/latest).
-2. Drag **`Quota.app`** into `/Applications`.
-3. Because the binary is ad-hoc signed without an Apple Developer certificate, clear the Gatekeeper quarantine flag once before first launch:
-   ```bash
-   xattr -cr /Applications/Quota.app
-   open /Applications/Quota.app
-   ```
 
 ## Requirements
 
@@ -54,5 +67,5 @@ swift test
 - `Sources/QuotaBarApp/` — Native AppKit menu bar item, hover tracking, and `NSMenu` UI
 - `Sources/QuotaBarCore/` — `CodexProvider`, `AntigravityProvider`, models, and polling store
 - `Tests/QuotaBarTests/` — Parser and resilient state merge unit tests
-- `scripts/` — App bundle packager (`build-app.sh`) and `.icns` generator (`generate-icons.swift`)
+- `scripts/` — App bundle packager (`build-app.sh`), 1-line installer (`install.sh`), and `.icns` generator (`generate-icons.swift`)
 - `.github/workflows/release.yml` — Automated Apple Silicon (`arm64`) release pipeline on `v*` tags
