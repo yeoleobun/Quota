@@ -45,6 +45,20 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          body: |
+            ### Install (Apple Silicon — No Gatekeeper Warning)
+
+            **Homebrew (Recommended):**
+            ```bash
+            brew tap yeoleobun/tap
+            brew trust yeoleobun/tap 2>/dev/null || true
+            brew install --cask yeoleobun/tap/quota
+            ```
+
+            **One-Line Terminal Installer:**
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/yeoleobun/Quota/main/scripts/install.sh | zsh
+            ```
           files: |
             dist/Quota-macos-arm64.dmg
             dist/Quota-macos-arm64.zip
