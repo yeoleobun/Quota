@@ -255,8 +255,8 @@ public enum AntigravityProvider {
 
     private static func parseWindowTitleLine(_ line: String) -> WindowTitleSpec? {
         let lower = line.lowercased()
-        // Ignore explanatory paragraph lines
-        if lower.hasPrefix("│") && (lower.contains("within each group") || lower.contains("consumed") || lower.contains("smooths out")) {
+        // Ignore explanatory callout box paragraph lines (prefixed with │ or ┃)
+        if lower.hasPrefix("│") || lower.hasPrefix("┃") {
             return nil
         }
         if lower.hasPrefix("models within this group") {
@@ -265,11 +265,14 @@ public enum AntigravityProvider {
 
         let isRemaining = !lower.contains("used") || lower.contains("remaining") || lower.contains("left")
 
-        if lower.contains("weekly limit") {
-            return WindowTitleSpec(inlineGroup: nil, label: "Weekly limit", isRemaining: isRemaining, durationMins: 10080)
-        }
-        if lower.contains("five hour limit") || lower.contains("5-hour limit") || lower.contains("5 hour limit") || lower.contains("5h limit") {
-            return WindowTitleSpec(inlineGroup: nil, label: "5h limit", isRemaining: isRemaining, durationMins: 300)
+        // Only match concise window title headers (never long prose sentences)
+        if lower.count <= 45 {
+            if lower.contains("weekly limit") {
+                return WindowTitleSpec(inlineGroup: nil, label: "Weekly limit", isRemaining: isRemaining, durationMins: 10080)
+            }
+            if lower.contains("five hour limit") || lower.contains("5-hour limit") || lower.contains("5 hour limit") || lower.contains("5h limit") {
+                return WindowTitleSpec(inlineGroup: nil, label: "5h limit", isRemaining: isRemaining, durationMins: 300)
+            }
         }
 
         // Single-line compact format fallback (e.g. "Gemini Pro / Flash  65% remaining · Resets in 4h 30m")

@@ -8,6 +8,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private let statusItem: NSStatusItem
     private let menu: NSMenu
     private let dotOverlayView = WeeklyDotOverlayView()
+    private var dashboardWindowController: DashboardWindowController?
 
     private var cancellables = Set<AnyCancellable>()
     private var hoverOpenWorkItem: DispatchWorkItem?
@@ -239,6 +240,19 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
+        // 2.5 Usage & Token Dashboard
+        let dashboardItem = NSMenuItem(
+            title: "Usage Dashboard…",
+            action: #selector(handleOpenDashboard(_:)),
+            keyEquivalent: "d"
+        )
+        dashboardItem.target = self
+        dashboardItem.isEnabled = true
+        dashboardItem.image = NSImage(systemSymbolName: "chart.bar.xaxis", accessibilityDescription: "Usage Dashboard")
+        menu.addItem(dashboardItem)
+
+        menu.addItem(.separator())
+
         // 3. Weekly Watermark Dot Toggle + Refresh Interval Submenu
         let indicatorItem = NSMenuItem(
             title: "Weekly indicator",
@@ -378,6 +392,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     // MARK: - Native NSMenu Actions
+
+    @objc private func handleOpenDashboard(_ sender: NSMenuItem) {
+        if dashboardWindowController == nil {
+            dashboardWindowController = DashboardWindowController(store: store)
+        }
+        dashboardWindowController?.showDashboard()
+    }
 
     @objc private func handleSelectProvider(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String,

@@ -23,6 +23,10 @@ public final class QuotaStore: ObservableObject {
     @Published public private(set) var isRefreshing: Bool = false
     @Published public private(set) var now: Date = Date()
     @Published public private(set) var updateState: AppUpdateState = .idle
+    @Published public private(set) var analytics: DashboardAnalytics = .empty()
+    @Published public private(set) var isLoadingAnalytics: Bool = false
+
+    private let tokenScanner = TokenLogScanner()
 
     private var pollTimer: Timer?
     private var clockTimer: Timer?
@@ -85,6 +89,32 @@ public final class QuotaStore: ObservableObject {
         now = Date()
         isRefreshing = false
         persistCache()
+    }
+
+    public func loadAnalytics(
+        timeRange: DashboardTimeRange,
+        providerFilter: ProviderFilter,
+        modelFilter: String? = nil
+    ) async {
+        isLoadingAnalytics = true
+        let scanner = tokenScanner
+        let currentNow = Date()
+        let cutoff = currentNow.addingTimeInterval(-timeRange.durationSeconds)
+
+        let result = await Task.detached(priority: .userInitiated) {
+            let tokenEvents = scanner.scanEvents(since: cutoff)
+            return DashboardAnalyticsEngine.buildAnalytics(
+                tokenEvents: tokenEvents,
+                probeSamples: [],
+                timeRange: timeRange,
+                providerFilter: providerFilter,
+                modelFilter: modelFilter,
+                now: currentNow
+            )
+        }.value
+
+        self.analytics = result
+        self.isLoadingAnalytics = false
     }
 
     // MARK: - Menu Bar Weekly Watermark Indicator

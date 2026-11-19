@@ -83,7 +83,8 @@ struct ParserTests {
         [██████████████████████████████████████████████████] 100.00%
         Quota available
         │Within each group, models share a weekly limit and a 5-hour limit.
-        auto ·  (Google AI Ultra)
+        │across all users, while your weekly limit is tied directly to your individual
+        0% context · auto ·  (Google AI Ultra)
         """
 
         let snapshot = AntigravityProvider.parseUsageOutput(sampleAgyTUI, binaryPath: "~/.local/bin/agy", now: now)
