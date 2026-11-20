@@ -116,6 +116,18 @@ struct ParserTests {
         #expect(snapshot.windows[3].label == "5h limit")
         #expect(snapshot.windows[3].remainingPercent == 100)
         #expect(snapshot.windows[3].resetsAt == nil)
+
+        // Transient startup banner ("You are currently not signed in. ⣷ Signing in...") must NOT trigger `.needsAuth`
+        let slowStartupOutput = """
+        Welcome to the Antigravity CLI. You are currently not signed in.
+        ⣷  Signing in...
+        """
+        let slowSnap = AntigravityProvider.parseUsageOutput(slowStartupOutput, binaryPath: "~/.local/bin/agy", now: now)
+        if case .error = slowSnap.status {
+            // Expected transient timeout/error
+        } else {
+            Issue.record("Expected transient .error during auto-sign-in, got \(slowSnap.status)")
+        }
     }
 
     @Test("Retains last usage on refresh failure with warning and clears warning on next success")

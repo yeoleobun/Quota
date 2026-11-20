@@ -349,14 +349,37 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     private func appendWarningItems(for snap: ProviderSnapshot, message: String) {
-        let warnItem = NSMenuItem(title: "⚠ \(message)", action: nil, keyEquivalent: "")
+        let warnItem = NSMenuItem()
         warnItem.isEnabled = false
+        warnItem.view = MenuWarningItemView(message: message, menuWidth: Self.menuMinimumWidth)
         menu.addItem(warnItem)
+
+        let lowerMsg = message.lowercased()
+        let isAuthIssue: Bool = {
+            if case .needsAuth = snap.status { return true }
+            return lowerMsg.contains("sign in") || lowerMsg.contains("auth") || lowerMsg.contains("login")
+        }()
+        let isCliMissing: Bool = {
+            if case .cliMissing = snap.status { return true }
+            return lowerMsg.contains("not installed")
+        }()
+
+        if !isAuthIssue && !isCliMissing {
+            let retryItem = NSMenuItem(
+                title: "Retry Refresh",
+                action: #selector(handleRetryRefresh(_:)),
+                keyEquivalent: ""
+            )
+            retryItem.target = self
+            retryItem.isEnabled = true
+            menu.addItem(retryItem)
+            return
+        }
 
         let actionTitle: String
         if snap.provider == .codex {
             actionTitle = "Open ChatGPT.app"
-        } else if case .cliMissing = snap.status {
+        } else if isCliMissing {
             actionTitle = "Install agy CLI"
         } else {
             actionTitle = "Sign in via Terminal"
@@ -414,6 +437,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         let mins = sender.tag
         if mins > 0 {
             store.settings.refreshIntervalMinutes = mins
+        }
+    }
+
+    @objc private func handleRetryRefresh(_ sender: NSMenuItem) {
+        Task { @MainActor [weak self] in
+            await self?.store.refreshAll()
         }
     }
 
@@ -652,4 +681,44 @@ private final class HoverTrackingOverlayView: NSView {
     override func mouseExited(with event: NSEvent) {
         onMouseExited()
     }
+}
+
+// MARK: - Wrapping Warning Row (Prevents NSMenu Horizontal Stretching)
+
+private final class MenuWarningItemView: NSView {
+    private static let leadingMargin: CGFloat = 28
+    private static let trailingMargin: CGFloat = 15
+    private static let verticalPadding: CGFloat = 4
+
+    init(message: String, menuWidth: CGFloat) {
+        let textWidth = max(120, menuWidth - Self.leadingMargin - Self.trailingMargin)
+        let label = NSTextField(wrappingLabelWithString: "⚠ \(message)")
+        label.font = NSFont.systemFont(ofSize: 11.5)
+        label.textColor = .secondaryLabelColor
+        label.lineBreakMode = .byWordWrapping
+        label.maximumNumberOfLines = 3
+        label.preferredMaxLayoutWidth = textWidth
+        label.translatesAutoresizingMaskIntoConstraints = false
+
+        let fitted = label.sizeThatFits(NSSize(width: textWidth, height: .greatestFiniteMagnitude))
+        let rowHeight = ceil(fitted.height) + Self.verticalPadding * 2
+
+        super.init(frame: NSRect(x: 0, y: 0, width: menuWidth, height: max(22, rowHeight)))
+        self.autoresizingMask = [.width]
+
+        addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Self.leadingMargin),
+            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Self.trailingMargin),
+            label.topAnchor.constraint(equalTo: topAnchor, constant: Self.verticalPadding),
+            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Self.verticalPadding)
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var isOpaque: Bool { false }
 }

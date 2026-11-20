@@ -196,17 +196,26 @@ public enum AntigravityProvider {
 
         if deduped.isEmpty {
             let fullLower = cleaned.lowercased()
-            if accountEmail == nil && (fullLower.contains("currently not signed in") || fullLower.contains("sign in") || fullLower.contains("authenticate")) {
+            // `agy` briefly prints "You are currently not signed in. ⣷ Signing in..." on EVERY launch
+            // while restoring its saved OAuth session. Only report `.needsAuth` when it is NOT
+            // auto-signing in (or explicitly asks for interactive browser sign-in).
+            let isAutoSigningIn = fullLower.contains("signing in...")
+            let needsInteractiveLogin = fullLower.contains("press enter") ||
+                fullLower.contains("open your browser") ||
+                fullLower.contains("sign in with google") ||
+                (!isAutoSigningIn && (fullLower.contains("currently not signed in") || fullLower.contains("authenticate")))
+
+            if accountEmail == nil && needsInteractiveLogin {
                 return ProviderSnapshot(
                     provider: .antigravity,
-                    status: .needsAuth(message: "Run `agy` once in Terminal to sign in with your Google account."),
+                    status: .needsAuth(message: "Run `agy` once in Terminal to sign in."),
                     binaryPath: binaryPath,
                     updatedAt: now
                 )
             }
             return ProviderSnapshot(
                 provider: .antigravity,
-                status: .error(message: "Could not read quota summary from `agy /usage`. Click refresh to retry."),
+                status: .error(message: "Refresh timed out. Will retry automatically."),
                 accountEmail: accountEmail,
                 binaryPath: binaryPath,
                 updatedAt: now
@@ -431,30 +440,40 @@ public enum AntigravityProvider {
 
         let start = Date()
         var sentUsage = false
+        var retriedUsage = false
         var usageSentAt: Date?
 
-        while Date().timeIntervalSince(start) < 14.0 {
+        while Date().timeIntervalSince(start) < 18.0 {
             drainAvailable()
             let currentText = String(decoding: collected, as: UTF8.self)
             let stripped = stripANSI(currentText)
             let lower = stripped.lowercased()
+            let elapsed = Date().timeIntervalSince(start)
 
-            // Wait until the TUI finishes signing in (renders user email `@`) before sending `/usage`
-            if !sentUsage && ((lower.contains("@") && lower.contains("? for shortcuts")) || Date().timeIntervalSince(start) > 3.5) {
+            // Wait until the TUI finishes signing in (renders `@` and `? for shortcuts`) before sending `/usage`.
+            // If `agy` is still auto-signing in (e.g., slow wake-from-sleep), give it up to 8s before fallback.
+            let promptReady = lower.contains("@") && lower.contains("? for shortcuts")
+            let fallbackWait: TimeInterval = lower.contains("signing in") ? 8.0 : 4.0
+            if !sentUsage && (promptReady || elapsed > fallbackWait) {
                 writePTY("/usage\r")
                 sentUsage = true
                 usageSentAt = Date()
             }
 
             // Wait until the entire `/usage` modal has rendered its footer paragraph ("within each group")
-            if let usageSentAt {
+            if let sentAt = usageSentAt {
                 if lower.contains("within each group") {
                     // Drain one more tick to capture trailing status bar plan tier
                     usleep(200_000)
                     drainAvailable()
                     break
                 }
-                if Date().timeIntervalSince(usageSentAt) > 8.0 && lower.contains("limit remaining") {
+                let sinceUsage = Date().timeIntervalSince(sentAt)
+                if !retriedUsage && sinceUsage > 4.5 && !lower.contains("models & quota") && !lower.contains("limit remaining") {
+                    writePTY("/usage\r")
+                    retriedUsage = true
+                    usageSentAt = Date()
+                } else if sinceUsage > 8.5 && lower.contains("limit remaining") {
                     break
                 }
             }

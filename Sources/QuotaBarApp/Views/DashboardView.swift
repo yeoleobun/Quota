@@ -9,10 +9,10 @@ final class DashboardViewModel: ObservableObject {
     @Published var timeRange: DashboardTimeRange = .days7
     @Published var selectedModel: String? = nil
 
-    /// Drives the staggered bottom-up bar wave animation (0 -> 1).
+    /// Drives the staggered bottom-up bar wave animation (false -> true).
     @Published var barsRevealed: Bool = false
-    /// Incremented on each data load so bars cleanly replay the bottom-up wave.
-    @Published var animationEpoch: Int = 0
+    /// Monotonic token to ignore stale async reloads on rapid clicks.
+    var reloadToken: Int = 0
     /// Currently hovered bar index for floating tooltip & spotlight.
     @Published var hoveredIndex: Int? = nil
     /// Refresh icon rotation angle.
@@ -162,15 +162,8 @@ struct DashboardView: View {
                 .menuStyle(.borderlessButton)
                 .fixedSize()
 
-                // Day / Week / Month
-                Picker("Range", selection: $viewModel.timeRange) {
-                    ForEach(DashboardTimeRange.allCases) { range in
-                        Text(range.rawValue).tag(range)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 165)
+                // Day / Week / Month — static-width buttons with pure horizontal slide
+                TimeRangeSlider(selection: $viewModel.timeRange)
 
                 Button {
                     withAnimation(.easeInOut(duration: 0.55)) {
@@ -180,12 +173,19 @@ struct DashboardView: View {
                         await reload(animated: true)
                     }
                 } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 11.5, weight: .medium))
-                        .rotationEffect(.degrees(viewModel.refreshRotation))
+                    if store.isLoadingAnalytics {
+                        ProgressView()
+                            .controlSize(.small)
+                            .frame(width: 14, height: 14)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .rotationEffect(.degrees(viewModel.refreshRotation))
+                    }
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .disabled(store.isLoadingAnalytics)
                 .help("Rescan local token logs")
             }
             .padding(.horizontal, 18)
@@ -246,8 +246,15 @@ struct DashboardView: View {
                 }
             }
 
-            // Custom True Bottom-Up Staggered Bar Chart
-            if analytics.totalTokens == 0 && !store.isLoadingAnalytics {
+            // Custom True Bottom-Up Staggered Bar Chart (or clean wave while loading)
+            if store.isLoadingAnalytics {
+                ChartLoadingWaveView(
+                    barCount: viewModel.timeRange == .days7 ? 7 : (viewModel.timeRange == .day24h ? 18 : 20),
+                    accentColor: accentColor
+                )
+                .frame(height: 210)
+                .transition(.opacity)
+            } else if analytics.totalTokens == 0 {
                 HStack(spacing: 10) {
                     Image(systemName: "chart.bar.xaxis")
                         .font(.title3)
@@ -265,7 +272,6 @@ struct DashboardView: View {
                     accentColor: accentColor,
                     accentGradient: accentGradient,
                     revealed: viewModel.barsRevealed,
-                    epoch: viewModel.animationEpoch,
                     hoveredIndex: $viewModel.hoveredIndex
                 )
                 .frame(height: 210)
@@ -311,7 +317,9 @@ struct DashboardView: View {
             }
             .padding(.horizontal, 4)
 
-            if analytics.modelSummaries.isEmpty {
+            if store.isLoadingAnalytics && analytics.modelSummaries.isEmpty {
+                ModelsLoadingSkeletonView()
+            } else if analytics.modelSummaries.isEmpty {
                 HStack {
                     Text("No model activity in this period.")
                         .font(.callout)
@@ -413,17 +421,28 @@ struct DashboardView: View {
     }
 
     private func reload(animated: Bool) async {
+        viewModel.reloadToken += 1
+        let myToken = viewModel.reloadToken
+
         if animated {
-            viewModel.barsRevealed = false
+            var noAnim = Transaction()
+            noAnim.disablesAnimations = true
+            withTransaction(noAnim) {
+                viewModel.barsRevealed = false
+            }
         }
+
         await store.loadAnalytics(
             timeRange: viewModel.timeRange,
             providerFilter: viewModel.providerFilter,
             modelFilter: viewModel.selectedModel
         )
-        viewModel.animationEpoch += 1
+
+        guard myToken == viewModel.reloadToken else { return }
+
         if animated {
-            try? await Task.sleep(nanoseconds: 25_000_000)
+            try? await Task.sleep(nanoseconds: 20_000_000)
+            guard myToken == viewModel.reloadToken else { return }
             viewModel.barsRevealed = true
         } else {
             viewModel.barsRevealed = true
@@ -439,7 +458,6 @@ private struct ScreenTimeBarChart: View {
     let accentColor: Color
     let accentGradient: LinearGradient
     let revealed: Bool
-    let epoch: Int
     @Binding var hoveredIndex: Int?
 
     private var maxVal: Double {
@@ -499,12 +517,12 @@ private struct ScreenTimeBarChart: View {
 
                         // Bars strictly anchored at bottom, rising with a staggered left-to-right spring wave
                         HStack(alignment: .bottom, spacing: barSpacing) {
-                            ForEach(Array(buckets.enumerated()), id: \.element.id) { idx, bucket in
+                            ForEach(Array(buckets.enumerated()), id: \.offset) { idx, bucket in
                                 let valueRatio = min(1.0, Double(bucket.totalTokens) / maxVal)
                                 let targetHeight = bucket.totalTokens > 0 ? max(4.0, plotHeight * CGFloat(valueRatio)) : 0
                                 let isHovered = hoveredIndex == idx
                                 let isDimmed = hoveredIndex != nil && !isHovered
-                                let stagger = min(0.28, Double(idx) * (timeRange == .days7 ? 0.035 : 0.011))
+                                let stagger = min(0.24, Double(idx) * (timeRange == .days7 ? 0.032 : 0.009))
 
                                 VStack(spacing: 0) {
                                     Spacer(minLength: 0)
@@ -516,11 +534,13 @@ private struct ScreenTimeBarChart: View {
                                         style: .continuous
                                     )
                                     .fill(accentGradient)
+                                    .frame(maxWidth: barMaxWidth)
                                     .frame(height: revealed ? targetHeight : 0)
                                     .opacity(isDimmed ? 0.32 : 1.0)
                                     .animation(
-                                        .spring(response: 0.48, dampingFraction: 0.80)
-                                            .delay(revealed ? stagger : 0),
+                                        revealed
+                                            ? .spring(response: 0.44, dampingFraction: 0.82).delay(stagger)
+                                            : nil,
                                         value: revealed
                                     )
                                     .animation(.easeOut(duration: 0.12), value: hoveredIndex)
@@ -536,7 +556,6 @@ private struct ScreenTimeBarChart: View {
                                 }
                             }
                         }
-                        .id("\(epoch)-\(buckets.count)")
 
                         // Floating Glass Tooltip anchored above hovered bar
                         if let idx = hoveredIndex, idx >= 0, idx < buckets.count {
@@ -601,9 +620,17 @@ private struct ScreenTimeBarChart: View {
 
     private var barSpacing: CGFloat {
         switch timeRange {
-        case .days7: return 14
+        case .days7: return 10
         case .day24h: return 4
         case .days30: return 3
+        }
+    }
+
+    private var barMaxWidth: CGFloat {
+        switch timeRange {
+        case .days7: return 34
+        case .day24h: return 14
+        case .days30: return 11
         }
     }
 
@@ -740,6 +767,135 @@ private struct LegendItem: View {
                 .font(.caption2.weight(.semibold))
                 .monospacedDigit()
         }
+    }
+}
+
+// MARK: - Smooth Loading Wave & Skeleton Views
+
+private struct ChartLoadingWaveView: View {
+    let barCount: Int
+    let accentColor: Color
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+
+            HStack(alignment: .bottom, spacing: barCount <= 8 ? 14 : 6) {
+                ForEach(0..<barCount, id: \.self) { idx in
+                    let phase = t * 3.4 - Double(idx) * 0.42
+                    let wave = 0.5 + 0.5 * sin(phase)
+                    let height = 22.0 + wave * 96.0
+                    let barOpacity = 0.14 + wave * 0.22
+
+                    VStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        UnevenRoundedRectangle(
+                            topLeadingRadius: barCount <= 8 ? 6 : 3.5,
+                            bottomLeadingRadius: 0,
+                            bottomTrailingRadius: 0,
+                            topTrailingRadius: barCount <= 8 ? 6 : 3.5,
+                            style: .continuous
+                        )
+                        .fill(accentColor.opacity(barOpacity))
+                        .frame(maxWidth: barCount <= 8 ? 34 : 14)
+                        .frame(height: height)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .padding(.trailing, 46)
+            .padding(.bottom, 18)
+        }
+    }
+}
+
+private struct ModelsLoadingSkeletonView: View {
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            let pulse = 0.08 + 0.07 * (0.5 + 0.5 * sin(t * 3.0))
+
+            VStack(spacing: 0) {
+                ForEach(0..<3, id: \.self) { idx in
+                    HStack(spacing: 12) {
+                        Circle()
+                            .fill(Color.primary.opacity(pulse))
+                            .frame(width: 16, height: 16)
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(Color.primary.opacity(pulse))
+                                .frame(width: idx == 0 ? 150 : (idx == 1 ? 120 : 95), height: 10)
+                            RoundedRectangle(cornerRadius: 2.5)
+                                .fill(Color.primary.opacity(pulse * 0.7))
+                                .frame(height: 5)
+                        }
+
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color.primary.opacity(pulse))
+                            .frame(width: 48, height: 10)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+
+                    if idx < 2 {
+                        Divider()
+                            .opacity(0.4)
+                            .padding(.leading, 44)
+                    }
+                }
+            }
+            .background(Color(nsColor: .controlBackgroundColor).opacity(0.65), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+            )
+        }
+    }
+}
+
+// MARK: - Static-Width Sliding Range Control
+
+private struct TimeRangeSlider: View {
+    @Binding var selection: DashboardTimeRange
+
+    private let ranges = DashboardTimeRange.allCases
+    private let segmentWidth: CGFloat = 56
+    private let segmentHeight: CGFloat = 24
+
+    private var selectedIndex: Int {
+        ranges.firstIndex(of: selection) ?? 0
+    }
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            // Sliding highlight pill — static width, pure horizontal slide (no scale/stretch)
+            RoundedRectangle(cornerRadius: 6.5, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+                .shadow(color: .black.opacity(0.08), radius: 2, x: 0, y: 1)
+                .frame(width: segmentWidth, height: segmentHeight)
+                .offset(x: CGFloat(selectedIndex) * segmentWidth)
+                .animation(.spring(response: 0.26, dampingFraction: 0.86), value: selectedIndex)
+
+            HStack(spacing: 0) {
+                ForEach(ranges) { range in
+                    let isSelected = (selection == range)
+                    Button {
+                        selection = range
+                    } label: {
+                        Text(range.rawValue)
+                            .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
+                            .foregroundStyle(isSelected ? .primary : .secondary)
+                            .frame(width: segmentWidth, height: segmentHeight)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(3)
+        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .fixedSize()
     }
 }
 
