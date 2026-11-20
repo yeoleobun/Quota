@@ -31,14 +31,43 @@ jobs:
       - name: Run unit tests
         run: swift test
 
+      - name: Import Code Signing Certificate
+        if: ${{ secrets.CODESIGN_P12 != '' && secrets.CODESIGN_PASSWORD != '' }}
+        env:
+          CODESIGN_P12: ${{ secrets.CODESIGN_P12 }}
+          CODESIGN_PASSWORD: ${{ secrets.CODESIGN_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/quota-signing.keychain-db"
+          KEYCHAIN_PASS="$(openssl rand -hex 16)"
+          P12_PATH="$RUNNER_TEMP/cert.p12"
+
+          echo "$CODESIGN_P12" | base64 --decode > "$P12_PATH"
+          security create-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+          security import "$P12_PATH" -k "$KEYCHAIN_PATH" -P "$CODESIGN_PASSWORD" -A -t cert -f pkcs12 -T /usr/bin/codesign
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+          rm -f "$P12_PATH"
+
       - name: Build Quota.app, ZIP, and DMG (arm64)
         env:
+          SIGN_IDENTITY: yeoleobun
           TAG_NAME: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
         run: |
           VERSION="${TAG_NAME#v}" PACKAGE_DMG=1 ./scripts/build-app.sh
+          codesign -dv --verbose=2 dist/Quota.app
           cd dist
           shasum -a 256 Quota-macos-arm64.zip Quota-macos-arm64.dmg > SHA256SUMS.txt
           cat SHA256SUMS.txt
+
+      - name: Cleanup Temporary Keychain
+        if: always()
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/quota-signing.keychain-db"
+          if [ -f "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          fi
 
       - name: Publish GitHub Release
         if: github.ref_type == 'tag'
