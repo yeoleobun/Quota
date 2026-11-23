@@ -32,11 +32,14 @@ jobs:
         run: swift test
 
       - name: Import Code Signing Certificate
-        if: ${{ secrets.CODESIGN_P12 != '' && secrets.CODESIGN_PASSWORD != '' }}
         env:
           CODESIGN_P12: ${{ secrets.CODESIGN_P12 }}
           CODESIGN_PASSWORD: ${{ secrets.CODESIGN_PASSWORD }}
         run: |
+          if [ -z "$CODESIGN_P12" ] || [ -z "$CODESIGN_PASSWORD" ]; then
+            echo "Code signing secrets not set; skipping certificate import."
+            exit 0
+          fi
           KEYCHAIN_PATH="$RUNNER_TEMP/quota-signing.keychain-db"
           KEYCHAIN_PASS="$(openssl rand -hex 16)"
           P12_PATH="$RUNNER_TEMP/cert.p12"
