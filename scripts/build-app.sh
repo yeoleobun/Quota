@@ -73,13 +73,12 @@ cat > "${BUNDLE_DIR}/Contents/Info.plist" <<EOF
 EOF
 
 SIGN_IDENTITY="${SIGN_IDENTITY:-yeoleobun}"
-if security find-identity -p codesigning | grep -Fq "\"${SIGN_IDENTITY}\""; then
-    echo "==> Signing ${BUNDLE_DIR} with identity \"${SIGN_IDENTITY}\"..."
-    codesign --force --deep --sign "${SIGN_IDENTITY}" "${BUNDLE_DIR}"
-else
-    echo "==> Signing identity \"${SIGN_IDENTITY}\" not found; falling back to ad-hoc signing..."
-    codesign --force --deep --sign - "${BUNDLE_DIR}"
+if ! security find-identity -p codesigning | grep -Fq "\"${SIGN_IDENTITY}\""; then
+    echo "Error: Signing identity \"${SIGN_IDENTITY}\" not found in keychain." >&2
+    exit 1
 fi
+echo "==> Signing ${BUNDLE_DIR} with identity \"${SIGN_IDENTITY}\"..."
+codesign --force --deep --sign "${SIGN_IDENTITY}" "${BUNDLE_DIR}"
 
 echo "==> Creating ${ZIP_PATH}..."
 ditto -c -k --sequesterRsrc --keepParent "${BUNDLE_DIR}" "${ZIP_PATH}"

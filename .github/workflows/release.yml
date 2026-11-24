@@ -37,8 +37,8 @@ jobs:
           CODESIGN_PASSWORD: ${{ secrets.CODESIGN_PASSWORD }}
         run: |
           if [ -z "$CODESIGN_P12" ] || [ -z "$CODESIGN_PASSWORD" ]; then
-            echo "Code signing secrets not set; skipping certificate import."
-            exit 0
+            echo "Error: CODESIGN_P12 and CODESIGN_PASSWORD secrets must be set." >&2
+            exit 1
           fi
           KEYCHAIN_PATH="$RUNNER_TEMP/quota-signing.keychain-db"
           KEYCHAIN_PASS="$(openssl rand -hex 16)"
