@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (e.g. v0.1.0)"
+        description: "Release tag (e.g. v0.3.2)"
         required: false
-        default: "v0.1.0"
+        default: "v0.3.2"
 
 permissions:
   contents: write
@@ -20,7 +20,7 @@ jobs:
     runs-on: macos-26
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Verify Apple Silicon & Swift toolchain
         run: |
@@ -74,7 +74,7 @@ jobs:
 
       - name: Publish GitHub Release
         if: github.ref_type == 'tag'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
           body: |
@@ -108,10 +108,18 @@ jobs:
           fi
           VERSION="${TAG_NAME#v}"
           ZIP_SHA=$(awk '/Quota-macos-arm64\.zip/ {print $1}' dist/SHA256SUMS.txt)
-          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/yeoleobun/homebrew-tap.git" /tmp/homebrew-tap
-          cd /tmp/homebrew-tap
+          TAP_DIR="$RUNNER_TEMP/homebrew-tap"
+          rm -rf "$TAP_DIR"
+          git -c credential.helper= clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/yeoleobun/homebrew-tap.git" "$TAP_DIR"
+          cd "$TAP_DIR"
           sed -i '' -e "s/version \".*\"/version \"${VERSION}\"/" -e "s/sha256 \".*\"/sha256 \"${ZIP_SHA}\"/" Casks/quota.rb
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Casks/quota.rb
-          git diff --cached --quiet || (git commit -m "Bump quota cask to ${VERSION}" && git push origin main)
+          if ! git diff --cached --quiet; then
+            git commit -m "Bump quota cask to ${VERSION}"
+            if ! git -c credential.helper= push origin main; then
+              echo "::error::Failed to push to yeoleobun/homebrew-tap. Ensure HOMEBREW_TAP_TOKEN has write access to yeoleobun/homebrew-tap."
+              exit 1
+            fi
+          fi
